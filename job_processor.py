@@ -15,9 +15,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from sheet_extractor import extract_sheets, format_table
+from sheet_extractor import extract_sheets, format_table, format_json
 from monday_client import MondayClient
 from claude_client import ClaudeClient
+from neon_client import log_intake_result
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +311,28 @@ def process_job(folder_path: str) -> dict:
         had_error=had_error,
     )
 
-    # 8. Return result summary
+    # 8. Log to Neon DB
+    import json as _json
+    sheet_index_data = _json.loads(format_json(sheet_results))
+    try:
+        log_intake_result(
+            item_id=item_id,
+            item_name=monday_data["item_name"] if monday_data else folder.name,
+            customer=folder.parent.name if folder.parent else "",
+            product=monday_data["product"] if monday_data else "",
+            scope=monday_data["scope"] if monday_data else "",
+            total_sheets=len(sheet_results),
+            estimated_pages=claude_result["estimated_pages"] if claude_result else 0,
+            complexity=claude_result["complexity"] if claude_result else 0,
+            reasoning=claude_result["reasoning"] if claude_result else "",
+            sheet_index_json=sheet_index_data,
+            pdfs_processed=len(pdf_paths),
+            had_error=had_error,
+        )
+    except Exception as e:
+        logger.error(f"[PROCESSOR] Neon logging failed: {e}")
+
+    # 9. Return result summary
     result = {
         "folder": str(folder),
         "item_id": item_id,
