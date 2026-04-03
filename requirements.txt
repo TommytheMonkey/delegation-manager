@@ -1,0 +1,4 @@
+pymupdf>=1.27
+pikepdf>=10.0
+httpx>=0.27
+anthropic>=0.40
