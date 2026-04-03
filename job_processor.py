@@ -25,11 +25,16 @@ MONDAY_ID_PATTERN = re.compile(r'MONDAY\s*ITEM\s*ID\s*:\s*(\d+)', re.IGNORECASE)
 
 
 def find_brief(folder: Path) -> Optional[Path]:
-    """Find the job brief file in a folder."""
+    """Find the job brief file in a folder. Prefer the original (non-.md) version."""
+    candidates = []
     for f in folder.iterdir():
         if f.is_file() and "job brief" in f.name.lower():
-            return f
-    return None
+            candidates.append(f)
+    if not candidates:
+        return None
+    # Prefer non-.md files (original brief from n8n)
+    non_md = [f for f in candidates if f.suffix.lower() != ".md"]
+    return non_md[0] if non_md else candidates[0]
 
 
 def find_pdfs(folder: Path) -> list[Path]:
@@ -62,45 +67,172 @@ def run_sheet_extractor(pdf_paths: list[Path]) -> list:
     return all_results
 
 
-def update_brief(brief_path: Path, estimated_pages: int, complexity: int,
-                 sheet_table: str, had_error: bool = False) -> None:
+def parse_brief_sections(text: str) -> dict:
     """
-    Update the job brief with estimation results and sheet index.
-    - Insert page count and complexity after the Monday ID line
-    - Append sheet index at the end
+    Parse the raw job brief into structured sections.
+    Splits on ======== dividers and extracts key-value fields.
+    """
+    sections = re.split(r'={3,}', text)
+    parsed = {
+        "monday_id": "",
+        "project_name": "",
+        "date": "",
+        "due_date": "",
+        "sender": "",
+        "product_type": "",
+        "scope": "",
+        "instructions": "",
+        "updates": "",
+    }
+
+    # First section: header (Monday ID, project name, date, due date)
+    if sections:
+        header = sections[0].strip()
+        id_match = MONDAY_ID_PATTERN.search(header)
+        if id_match:
+            parsed["monday_id"] = id_match.group(1)
+
+        header_lines = [l.strip() for l in header.split("\n") if l.strip()]
+        for line in header_lines:
+            if MONDAY_ID_PATTERN.search(line):
+                continue
+            # Skip lines that look like previously-injected estimates
+            if line.startswith("Estimated Page Count:") or line.startswith("Complexity:"):
+                continue
+            if line.startswith("**Due Date:"):
+                parsed["due_date"] = line.replace("**Due Date:**", "").strip()
+            elif not parsed["project_name"]:
+                parsed["project_name"] = line
+            elif not parsed["date"]:
+                # Verify it looks like a date (contains a month name or digits with slashes/dashes)
+                if re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December|\d{1,2}[/\-])', line, re.IGNORECASE):
+                    parsed["date"] = line
+
+    # Second section: contact/product/scope
+    if len(sections) > 1:
+        meta = sections[1].strip()
+        for line in meta.split("\n"):
+            line = line.strip()
+            if line.upper().startswith("SENDER/CONTACT:"):
+                parsed["sender"] = line.split(":", 1)[1].strip()
+            elif line.upper().startswith("PRODUCT TYPE:"):
+                parsed["product_type"] = line.split(":", 1)[1].strip()
+            elif line.upper().startswith("SCOPE:"):
+                parsed["scope"] = line.split(":", 1)[1].strip()
+
+    # Third section: instructions
+    if len(sections) > 2:
+        instr = sections[2].strip()
+        # Strip the "INSTRUCTIONS:" label
+        instr = re.sub(r'^INSTRUCTIONS\s*:\s*', '', instr, flags=re.IGNORECASE).strip()
+        parsed["instructions"] = instr
+
+    # Fourth+ sections: updates/comments
+    if len(sections) > 3:
+        updates_parts = []
+        for s in sections[3:]:
+            s = s.strip()
+            # Strip the "UPDATES/COMMENTS:" label if present
+            s = re.sub(r'^UPDATES/COMMENTS\s*:\s*', '', s, flags=re.IGNORECASE).strip()
+            # Skip empty sections and previously-appended sheet index sections
+            if not s or s.startswith("SHEET INDEX:"):
+                continue
+            updates_parts.append(s)
+        parsed["updates"] = "\n\n".join(updates_parts)
+
+    return parsed
+
+
+def build_markdown_brief(parsed: dict, estimated_pages: int, complexity: int,
+                         sheet_table: str, reasoning: str = "",
+                         monday_scope: str = "", had_error: bool = False) -> str:
+    """Build a clean markdown job brief from parsed sections + analysis results."""
+    lines = []
+
+    # Header
+    lines.append(f"# {parsed['project_name'] or 'Job Brief'}")
+    lines.append("")
+    lines.append(f"**Monday Item ID:** {parsed['monday_id']}")
+    if parsed["date"]:
+        lines.append(f"**Date:** {parsed['date']}")
+    if parsed["due_date"]:
+        lines.append(f"**Due Date:** {parsed['due_date']}")
+    lines.append("")
+
+    # Estimation results
+    lines.append("---")
+    lines.append("")
+    if had_error:
+        lines.append("**Estimated Page Count:** ERROR — could not complete analysis")
+        lines.append("**Complexity:** ERROR")
+    else:
+        lines.append(f"**Estimated Page Count:** ~{estimated_pages}")
+        lines.append(f"**Complexity:** {complexity}/5")
+        if reasoning:
+            lines.append(f"**Reasoning:** {reasoning}")
+    lines.append("")
+
+    # Job details
+    lines.append("---")
+    lines.append("")
+    lines.append("## Job Details")
+    lines.append("")
+    if parsed["sender"]:
+        lines.append(f"**Sender/Contact:** {parsed['sender']}")
+    if parsed["product_type"]:
+        lines.append(f"**Product Type:** {parsed['product_type']}")
+    scope_display = monday_scope or parsed["scope"]
+    if scope_display:
+        lines.append(f"**Scope:** {scope_display}")
+    lines.append("")
+
+    # Instructions
+    if parsed["instructions"]:
+        lines.append("## Instructions")
+        lines.append("")
+        lines.append(parsed["instructions"])
+        lines.append("")
+
+    # Updates/Comments
+    if parsed["updates"]:
+        lines.append("## Updates/Comments")
+        lines.append("")
+        lines.append(parsed["updates"])
+        lines.append("")
+
+    # Sheet Index
+    lines.append("---")
+    lines.append("")
+    lines.append("## Sheet Index")
+    lines.append("")
+    lines.append("```")
+    lines.append(sheet_table)
+    lines.append("```")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def update_brief(brief_path: Path, estimated_pages: int, complexity: int,
+                 sheet_table: str, reasoning: str = "", monday_scope: str = "",
+                 had_error: bool = False) -> Path:
+    """
+    Parse the original job brief, reformat everything as a clean .md file.
+    Returns the path to the new .md file.
     """
     text = brief_path.read_text(encoding="utf-8", errors="replace")
-    lines = text.split("\n")
+    parsed = parse_brief_sections(text)
 
-    # Find the Monday ID line and insert after it
-    insert_idx = None
-    for i, line in enumerate(lines):
-        if MONDAY_ID_PATTERN.search(line):
-            insert_idx = i + 1
-            break
+    md_content = build_markdown_brief(
+        parsed, estimated_pages, complexity, sheet_table,
+        reasoning=reasoning, monday_scope=monday_scope, had_error=had_error,
+    )
 
-    if insert_idx is not None:
-        new_lines = []
-        if had_error:
-            new_lines.append(f"Estimated Page Count: ERROR — could not complete analysis")
-            new_lines.append(f"Complexity: ERROR")
-        else:
-            new_lines.append(f"Estimated Page Count: ~{estimated_pages}")
-            new_lines.append(f"Complexity: {complexity}/5")
-
-        for nl in reversed(new_lines):
-            lines.insert(insert_idx, nl)
-
-    # Append sheet index at the end
-    lines.append("")
-    lines.append("========================================")
-    lines.append("")
-    lines.append("SHEET INDEX:")
-    lines.append("")
-    lines.append(sheet_table)
-
-    brief_path.write_text("\n".join(lines), encoding="utf-8")
-    logger.info(f"[PROCESSOR] Updated brief: {brief_path.name}")
+    # Write as .md file with same name
+    md_path = brief_path.parent / (brief_path.stem + ".md")
+    md_path.write_text(md_content, encoding="utf-8")
+    logger.info(f"[PROCESSOR] Created markdown brief: {md_path.name}")
+    return md_path
 
 
 def process_job(folder_path: str) -> dict:
@@ -166,13 +298,15 @@ def process_job(folder_path: str) -> dict:
     except Exception as e:
         logger.error(f"[PROCESSOR] Claude analysis failed: {e}")
 
-    # 7. Update the brief
+    # 7. Update the brief → output as .md
     had_error = claude_result is None or claude_result.get("error")
-    update_brief(
+    md_path = update_brief(
         brief_path,
         estimated_pages=claude_result["estimated_pages"] if claude_result else 0,
         complexity=claude_result["complexity"] if claude_result else 0,
         sheet_table=sheet_table,
+        reasoning=claude_result["reasoning"] if claude_result else "",
+        monday_scope=monday_data["scope"] if monday_data else "",
         had_error=had_error,
     )
 

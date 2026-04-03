@@ -91,21 +91,31 @@ SHEET_NUMBER_PATTERNS = [
 ]
 
 VALID_SHEET_PREFIXES = {
-    'A', 'AD', 'AR',           # Architectural
-    'S', 'ST',                  # Structural
-    'C', 'CV',                  # Civil
-    'L', 'LA', 'LH', 'LD',    # Landscape / Hardscape
-    'LS', 'LP', 'LL', 'LI', 'LG', 'LC',  # Landscape sub-disciplines
-    'I', 'IR', 'IG',           # Irrigation
-    'E', 'EL', 'EP',           # Electrical
-    'M', 'ME', 'MP',           # Mechanical
-    'P', 'PL', 'PB',           # Plumbing
-    'F', 'FP',                  # Fire Protection
-    'G', 'GN',                  # General
-    'D', 'DT', 'DM',           # Details / Demo
-    'T',                        # Title / TOC
-    'SP', 'SK', 'AS', 'X',    # Specs / Sketch / As-built / Cross
-    'MEP',                      # Combined MEP
+    'G', 'GN', 'GC', 'GI', 'GR',                 # General
+    'T', 'TS',                                     # Title / TOC / Telecom
+    'V', 'VA',                                     # Survey / Mapping
+    'B', 'BG', 'BH',                              # Geotechnical
+    'C', 'CA', 'CB', 'CD', 'CE', 'CF', 'CG', 'CI', 'CL', 'CP', 'CR', 'CS', 'CT', 'CV', 'CW',  # Civil
+    'L', 'LA', 'LC', 'LD', 'LG', 'LH', 'LI', 'LL', 'LM', 'LP', 'LS', 'LT', 'LV',  # Landscape / Irrigation / Site
+    'H', 'HA', 'HM', 'HZ',                        # Hazardous Materials
+    'A', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AI', 'AJ', 'AK', 'AL', 'AM',  # Architectural
+    'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ',
+    'I', 'IA', 'IB', 'ID', 'IF', 'IG', 'II', 'IN', 'IR', 'IS', 'IT', 'IX',  # Interiors / Irrigation
+    'Q', 'QA', 'QB', 'QC', 'QD', 'QE',            # Equipment
+    'S', 'SA', 'SB', 'SC', 'SD', 'SE', 'SF', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL',  # Structural
+    'SM', 'SN', 'SP', 'SQ', 'SR', 'SS', 'ST', 'SU', 'SV', 'SW', 'SX', 'SY', 'SZ',
+    'F', 'FA', 'FD', 'FH', 'FI', 'FL', 'FP', 'FS',  # Fire Protection / Fire Alarm
+    'P', 'PA', 'PB', 'PD', 'PG', 'PH', 'PL', 'PM', 'PP', 'PR', 'PS', 'PT', 'PV', 'PW',  # Plumbing / Process
+    'D', 'DA', 'DB', 'DC', 'DD', 'DE', 'DF', 'DG', 'DI', 'DM', 'DP', 'DR', 'DT', 'DX',  # Process / Demo / Drainage
+    'M', 'MA', 'MB', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MI', 'MJ', 'MK', 'ML', 'MM',  # Mechanical / HVAC
+    'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MV', 'MW', 'MX', 'MY', 'MZ',
+    'E', 'EA', 'EB', 'EC', 'ED', 'EE', 'EF', 'EG', 'EH', 'EI', 'EJ', 'EK', 'EL',  # Electrical
+    'EM', 'EN', 'EP', 'EQ', 'ER', 'ES', 'ET', 'EU', 'EV', 'EW', 'EX', 'EY', 'EZ',
+    'R', 'RA', 'RB', 'RC', 'RD', 'RF',            # Resource
+    'W', 'WA', 'WB', 'WD', 'WF', 'WG',            # Distributed Energy / Water / Utilities
+    'X', 'XA', 'XB', 'XC',                         # Other / Specialty / Existing
+    'Z', 'ZA', 'ZB', 'ZC', 'ZD',                   # Contractor / Shop / Delegated Design
+    'MEP', 'FPA', 'TEL', 'TECH',                    # Common combined / non-NCS office usage
 }
 
 SHEET_NUMBER_BLACKLIST = {
