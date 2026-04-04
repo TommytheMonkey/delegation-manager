@@ -18,8 +18,9 @@ import logging
 import argparse
 import re
 from pathlib import Path
-
+from dotenv import load_dotenv
 from job_processor import process_job
+from neon_client import sync_actuals
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +28,9 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+load_dotenv()
+
 
 DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
@@ -92,6 +96,9 @@ def scan_for_jobs(watch_dir: Path) -> list[dict]:
     return jobs
 
 
+ACTUALS_SYNC_INTERVAL = 10  # sync actuals every N poll cycles
+
+
 def run_watcher(watch_dir: Path, poll_interval: int, once: bool = False) -> None:
     """Main watcher loop."""
     logger.info(f"Watching: {watch_dir.resolve()}")
@@ -99,6 +106,7 @@ def run_watcher(watch_dir: Path, poll_interval: int, once: bool = False) -> None
 
     watch_dir.mkdir(parents=True, exist_ok=True)
     processed = load_processed(watch_dir)
+    cycle_count = 0
 
     while True:
         jobs = scan_for_jobs(watch_dir)
@@ -129,6 +137,14 @@ def run_watcher(watch_dir: Path, poll_interval: int, once: bool = False) -> None
             except Exception as e:
                 logger.error(f"Failed to process {Path(folder).name}: {e}", exc_info=True)
 
+        # Periodically sync actuals from work_log
+        cycle_count += 1
+        if cycle_count % ACTUALS_SYNC_INTERVAL == 0:
+            try:
+                sync_actuals()
+            except Exception as e:
+                logger.error(f"Actuals sync error: {e}")
+
         if once:
             break
 
@@ -144,7 +160,14 @@ def main():
                         help="Poll interval in seconds (default: 30)")
     parser.add_argument("--once", action="store_true",
                         help="Run a single scan then exit (for testing)")
+    parser.add_argument("--sync-actuals", action="store_true",
+                        help="Sync actual page counts from work_log and exit")
     args = parser.parse_args()
+
+    if args.sync_actuals:
+        stats = sync_actuals()
+        print(f"Synced: {stats['synced']}, Awaiting actuals: {stats['no_actuals']}, Not in work_log: {stats['not_found']}")
+        return
 
     run_watcher(Path(args.watch_dir), args.interval, once=args.once)
 
