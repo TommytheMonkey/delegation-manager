@@ -18,7 +18,7 @@ from typing import Optional
 from dateutil import parser as dateparser
 
 from sheet_extractor import extract_sheets, format_table, format_json
-from monday_client import MondayClient, COL_DUE_DATE, COL_EST_PAGES
+from monday_client import MondayClient, COL_DUE_DATE
 from claude_client import ClaudeClient
 from neon_client import log_intake_result
 
@@ -357,14 +357,10 @@ def process_job(folder_path: str) -> dict:
     except Exception as e:
         logger.error(f"[PROCESSOR] Neon logging failed: {e}")
 
-    # 9. Push estimated pages + due date to Monday.com
+    # 9. Push due date to Monday.com
     try:
         monday = monday or MondayClient()
         column_updates = {}
-
-        # Always push estimated pages if we have a valid result
-        if claude_result and not claude_result.get("error"):
-            column_updates[COL_EST_PAGES] = str(claude_result["estimated_pages"])
 
         # Push due date only if Monday doesn't already have one
         monday_has_due_date = monday_data and monday_data.get("due_date", "").strip()
