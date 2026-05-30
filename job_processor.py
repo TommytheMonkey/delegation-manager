@@ -15,8 +15,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from dateutil import parser as dateparser
+
 from sheet_extractor import extract_sheets, format_table, format_json
-from monday_client import MondayClient
+from monday_client import MondayClient, COL_DUE_DATE, COL_EST_PAGES
 from claude_client import ClaudeClient
 from neon_client import log_intake_result
 
@@ -49,6 +51,28 @@ def parse_monday_id(brief_path: Path) -> Optional[str]:
     match = MONDAY_ID_PATTERN.search(text)
     if match:
         return match.group(1)
+    return None
+
+
+def _parse_due_date(brief_path: Path) -> Optional[str]:
+    """
+    Extract the due date from the job brief and return as YYYY-MM-DD string.
+    Returns None if no due date found or it can't be parsed.
+    """
+    text = brief_path.read_text(encoding="utf-8", errors="replace")
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("**Due Date:"):
+            raw = line.replace("**Due Date:**", "").replace("**Due Date:", "").strip()
+            raw = raw.rstrip("*").strip()
+            if not raw:
+                return None
+            try:
+                dt = dateparser.parse(raw)
+                return dt.strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                logger.warning(f"[PROCESSOR] Could not parse due date: {raw!r}")
+                return None
     return None
 
 
@@ -274,6 +298,7 @@ def process_job(folder_path: str) -> dict:
 
     # 5. Fetch Monday.com data
     monday_data = None
+    monday = None
     try:
         monday = MondayClient()
         item_data = monday.fetch_item(item_id)
@@ -332,7 +357,28 @@ def process_job(folder_path: str) -> dict:
     except Exception as e:
         logger.error(f"[PROCESSOR] Neon logging failed: {e}")
 
-    # 9. Return result summary
+    # 9. Push estimated pages + due date to Monday.com
+    try:
+        monday = monday or MondayClient()
+        column_updates = {}
+
+        # Always push estimated pages if we have a valid result
+        if claude_result and not claude_result.get("error"):
+            column_updates[COL_EST_PAGES] = str(claude_result["estimated_pages"])
+
+        # Push due date only if Monday doesn't already have one
+        monday_has_due_date = monday_data and monday_data.get("due_date", "").strip()
+        brief_due_date = _parse_due_date(brief_path)
+        if not monday_has_due_date and brief_due_date:
+            column_updates[COL_DUE_DATE] = {"date": brief_due_date}
+            logger.info(f"[PROCESSOR] Setting due date from brief: {brief_due_date}")
+
+        if column_updates:
+            monday.update_columns(item_id, column_updates)
+    except Exception as e:
+        logger.error(f"[PROCESSOR] Monday.com update failed: {e}")
+
+    # 10. Return result summary
     result = {
         "folder": str(folder),
         "item_id": item_id,
